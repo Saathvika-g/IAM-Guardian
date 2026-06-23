@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class Severity(str, Enum):
@@ -35,3 +35,16 @@ class AuditResponse(BaseModel):
     findings: List[Finding]
     total_findings: int
     run_at: str
+
+
+class FindingRecord(BaseModel):
+    id: str
+    check_name: str
+    severity: str
+    resource_arn: str
+    raw_data: dict
+    llm_explanation: Optional[str] = None
+    status: str
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
