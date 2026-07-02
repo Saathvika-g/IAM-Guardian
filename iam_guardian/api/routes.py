@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 from uuid import uuid4
@@ -6,8 +7,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from iam_guardian.auth import get_current_user
 from iam_guardian.database import get_db
 from iam_guardian.db_models import FindingORM
+from iam_guardian.explainer import explain_finding
 from iam_guardian.models import (
     AuditRequest,
     AuditResponse,
@@ -28,6 +31,7 @@ def health() -> dict:
 async def run_audit(
     request: AuditRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ) -> AuditResponse:
     findings = [
         Finding(
@@ -77,14 +81,21 @@ async def run_audit(
         ),
     ]
 
+    loop = asyncio.get_event_loop()
     for finding in findings:
         raw_data = finding.model_dump(mode="json")
+        llm_explanation = await loop.run_in_executor(
+            None,
+            explain_finding,
+            raw_data,
+        )
         db.add(
             FindingORM(
                 check_name=finding.title,
                 severity=finding.severity.value,
                 resource_arn=finding.resource,
                 raw_data=raw_data,
+                llm_explanation=llm_explanation,
             )
         )
 
@@ -105,6 +116,7 @@ async def list_findings(
     severity: Optional[str] = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ) -> List[FindingRecord]:
     query = select(FindingORM).order_by(FindingORM.created_at.desc()).limit(limit)
 
