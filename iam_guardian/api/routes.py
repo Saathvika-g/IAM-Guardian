@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from iam_guardian.auditors.cross_account import check_cross_account_trust
+from iam_guardian.auditors.wildcard_actions import check_wildcard_actions
 from iam_guardian.auth import get_current_user
 from iam_guardian.database import get_db
 from iam_guardian.db_models import FindingORM
@@ -14,9 +16,7 @@ from iam_guardian.explainer import explain_finding
 from iam_guardian.models import (
     AuditRequest,
     AuditResponse,
-    Finding,
     FindingRecord,
-    Severity,
 )
 
 router = APIRouter()
@@ -33,53 +33,48 @@ async def run_audit(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> AuditResponse:
-    findings = [
-        Finding(
-            id="IAM-001",
-            title="Overly permissive IAM role allows wildcard actions",
-            severity=Severity.critical,
-            resource=f"arn:aws:iam::{request.account_id}:role/AdminWildcardRole",
-            description=(
-                "An IAM role has a policy statement that allows '*' actions, "
-                "which grants unrestricted permissions."
+    mock_policies = [
+        {
+            "resource_arn": f"arn:aws:iam::{request.account_id}:role/AdminRole",
+            "policy_doc": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {"Effect": "Allow", "Action": "*", "Resource": "*"}
+                ],
+            },
+            "type": "permission",
+        },
+        {
+            "resource_arn": (
+                f"arn:aws:iam::{request.account_id}:role/CrossAccountRole"
             ),
-            recommendation=(
-                "Replace wildcard actions with least-privilege permissions "
-                "required by the workload."
-            ),
-            tags=["iam", "least-privilege", "wildcard-actions"],
-        ),
-        Finding(
-            id="IAM-002",
-            title="MFA not enabled on root account",
-            severity=Severity.high,
-            resource=f"arn:aws:iam::{request.account_id}:root",
-            description=(
-                "The AWS account root user does not have multi-factor "
-                "authentication enabled."
-            ),
-            recommendation=(
-                "Enable MFA for the root account and avoid using root "
-                "credentials for day-to-day operations."
-            ),
-            tags=["iam", "root-account", "mfa"],
-        ),
-        Finding(
-            id="IAM-003",
-            title="Unused IAM access key older than 90 days",
-            severity=Severity.medium,
-            resource=f"arn:aws:iam::{request.account_id}:user/legacy-service-account",
-            description=(
-                "An IAM access key has not been used in more than 90 days, "
-                "increasing credential exposure risk."
-            ),
-            recommendation=(
-                "Deactivate and delete unused access keys after confirming "
-                "they are no longer required."
-            ),
-            tags=["iam", "access-key", "credential-hygiene"],
-        ),
+            "policy_doc": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {"AWS": "arn:aws:iam::999999999999:root"},
+                        "Action": "sts:AssumeRole",
+                    }
+                ],
+            },
+            "type": "trust",
+        },
     ]
+
+    findings = []
+    for policy in mock_policies:
+        if policy["type"] == "permission":
+            findings += check_wildcard_actions(
+                policy["policy_doc"],
+                policy["resource_arn"],
+            )
+        elif policy["type"] == "trust":
+            findings += check_cross_account_trust(
+                policy["policy_doc"],
+                policy["resource_arn"],
+                request.account_id,
+            )
 
     loop = asyncio.get_event_loop()
     for finding in findings:

@@ -3,8 +3,14 @@ import sys
 
 from anthropic import Anthropic
 
+USE_SECRETS_MANAGER = os.getenv("USE_SECRETS_MANAGER", "false").lower() == "true"
 try:
-    client = Anthropic()
+    if USE_SECRETS_MANAGER:
+        from iam_guardian.core.secrets import get_anthropic_key
+
+        client = Anthropic(api_key=get_anthropic_key())
+    else:
+        client = Anthropic()
     client_init_error = None
 except Exception as e:
     client = None
