@@ -1,13 +1,11 @@
-import os
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:PBtsitp3@localhost:5432/iam_guardian",
-)
+from iam_guardian.core.secrets import get_database_url
+
+DATABASE_URL = get_database_url()
 
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = async_sessionmaker(

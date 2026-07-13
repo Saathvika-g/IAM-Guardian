@@ -3,8 +3,7 @@ from typing import Optional
 from uuid import UUID as PythonUUID
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, String, Text
-from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
+from sqlalchemy import JSON, DateTime, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from iam_guardian.database import Base
@@ -14,7 +13,7 @@ class FindingORM(Base):
     __tablename__ = "findings"
 
     id: Mapped[PythonUUID] = mapped_column(
-        PostgresUUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid4,
     )

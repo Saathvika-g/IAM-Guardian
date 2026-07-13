@@ -1,14 +1,9 @@
-import os
+from iam_guardian.core.secrets import (
+    get_database_url,
+    get_groq_key,
+    get_secret_key,
+)
 
-USE_SECRETS_MANAGER = os.getenv("USE_SECRETS_MANAGER", "false").lower() == "true"
-
-
-def resolve_anthropic_key() -> str:
-    if USE_SECRETS_MANAGER:
-        from iam_guardian.core.secrets import get_anthropic_key
-
-        return get_anthropic_key()
-    return os.getenv("ANTHROPIC_API_KEY", "")
-
-
-ANTHROPIC_API_KEY = resolve_anthropic_key()
+GROQ_API_KEY = get_groq_key()
+DATABASE_URL = get_database_url()
+SECRET_KEY = get_secret_key()
