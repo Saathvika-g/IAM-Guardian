@@ -24,3 +24,24 @@ class FindingORM(Base):
     llm_explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="open", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PolicyRewriteORM(Base):
+    __tablename__ = "policy_rewrites"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    finding_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    original_policy: Mapped[dict] = mapped_column(JSON, nullable=False)
+    rewritten_policy: Mapped[dict] = mapped_column(JSON, nullable=False)
+    diff_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    simulation_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    rewrite_status: Mapped[str] = mapped_column(
+        String(50),
+        default="verified",
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -45,6 +45,51 @@ class FindingRecord(BaseModel):
     raw_data: dict
     llm_explanation: Optional[str] = None
     status: str
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IAMStatement(BaseModel):
+    Sid: Optional[str] = None
+    Effect: str
+    Action: Union[str, List[str]]
+    Resource: Union[str, List[str]]
+    Principal: Optional[Union[str, dict]] = None
+    Condition: Optional[dict] = None
+
+
+class IAMPolicyModel(BaseModel):
+    Version: Optional[str] = "2012-10-17"
+    Statement: List[IAMStatement]
+
+
+class SimulationResult(BaseModel):
+    status: str
+    original_actions: List[str]
+    denied_actions: List[str]
+    allowed_actions: List[str]
+    detail: str
+
+
+class RewriteResponse(BaseModel):
+    finding_id: str
+    check_name: str
+    original_policy: dict
+    rewritten_policy: dict
+    diff_summary: str
+    simulation_result: SimulationResult
+    rewrite_status: str
+
+
+class PolicyRewriteRecord(BaseModel):
+    id: str
+    finding_id: str
+    original_policy: dict
+    rewritten_policy: dict
+    diff_summary: Optional[str] = None
+    simulation_result: Optional[dict] = None
+    rewrite_status: str
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
