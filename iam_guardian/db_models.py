@@ -45,3 +45,26 @@ class PolicyRewriteORM(Base):
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EscalationPathORM(Base):
+    __tablename__ = "escalation_paths"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    account_id: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    principal_arn: Mapped[str] = mapped_column(String(500), nullable=False)
+    principal_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    principal_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    matched_combo: Mapped[list] = mapped_column(JSON, nullable=False)
+    effective_permissions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    severity: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    attack_story: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    narrative: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

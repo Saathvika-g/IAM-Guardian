@@ -93,3 +93,32 @@ class PolicyRewriteRecord(BaseModel):
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EscalationPathRecord(BaseModel):
+    id: str
+    account_id: str
+    principal_arn: str
+    principal_type: str
+    principal_name: str
+    matched_combo: List[str]
+    effective_permissions: Optional[List[str]] = None
+    severity: str
+    title: str
+    description: Optional[str] = None
+    attack_story: Optional[str] = None
+    narrative: Optional[str] = None
+    tags: Optional[List[str]] = None
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EscalationScanResponse(BaseModel):
+    account_id: str
+    scan_id: str
+    total_paths: int
+    critical_count: int
+    high_count: int
+    paths: List[EscalationPathRecord]
+    scanned_at: str

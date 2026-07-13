@@ -1,5 +1,10 @@
-from typing import List
+import json
+import sys
+from typing import List, Optional
 from uuid import uuid4
+
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
 
 from iam_guardian.models import Finding, Severity
 
@@ -215,3 +220,185 @@ def check_escalation_paths(policy_doc: dict, resource_arn: str) -> List[Finding]
             )
 
     return findings
+
+
+def _get_inline_policy_doc(
+    iam_client,
+    principal_type: str,
+    principal_name: str,
+    policy_name: str,
+) -> dict:
+    try:
+        if principal_type == "user":
+            resp = iam_client.get_user_policy(
+                UserName=principal_name,
+                PolicyName=policy_name,
+            )
+        else:
+            resp = iam_client.get_role_policy(
+                RoleName=principal_name,
+                PolicyName=policy_name,
+            )
+        return resp.get("PolicyDocument", {})
+    except ClientError as e:
+        print(f"[escalation] inline policy fetch error: {e}", file=sys.stderr)
+        return {}
+
+
+def _get_attached_policy_doc(iam_client, policy_arn: str) -> dict:
+    try:
+        policy_resp = iam_client.get_policy(PolicyArn=policy_arn)
+        version_id = policy_resp["Policy"]["DefaultVersionId"]
+        version_resp = iam_client.get_policy_version(
+            PolicyArn=policy_arn,
+            VersionId=version_id,
+        )
+        return version_resp["PolicyVersion"].get("Document", {})
+    except ClientError as e:
+        print(f"[escalation] managed policy fetch error: {e}", file=sys.stderr)
+        return {}
+
+
+def _collect_principal_permissions(
+    iam_client,
+    principal_type: str,
+    principal_name: str,
+    principal_arn: str,
+) -> set[str]:
+    all_permissions = set()
+
+    try:
+        if principal_type == "user":
+            inline_resp = iam_client.list_user_policies(UserName=principal_name)
+        else:
+            inline_resp = iam_client.list_role_policies(RoleName=principal_name)
+
+        for policy_name in inline_resp.get("PolicyNames", []):
+            doc = _get_inline_policy_doc(
+                iam_client,
+                principal_type,
+                principal_name,
+                policy_name,
+            )
+            all_permissions |= _enumerate_permissions(doc)
+
+        if principal_type == "user":
+            attached_resp = iam_client.list_attached_user_policies(
+                UserName=principal_name,
+            )
+        else:
+            attached_resp = iam_client.list_attached_role_policies(
+                RoleName=principal_name,
+            )
+
+        for policy in attached_resp.get("AttachedPolicies", []):
+            doc = _get_attached_policy_doc(iam_client, policy["PolicyArn"])
+            all_permissions |= _enumerate_permissions(doc)
+
+    except ClientError as e:
+        print(
+            f"[escalation] permission collection error for {principal_arn}: {e}",
+            file=sys.stderr,
+        )
+
+    return all_permissions
+
+
+def _build_path_records(
+    permissions: set[str],
+    principal_arn: str,
+    principal_type: str,
+    principal_name: str,
+    account_id: str,
+) -> list[dict]:
+    records = []
+    for combo, meta in ESCALATION_COMBOS.items():
+        if not _matches_combo(permissions, combo):
+            continue
+        records.append(
+            {
+                "principal_arn": principal_arn,
+                "principal_type": principal_type,
+                "principal_name": principal_name,
+                "matched_combo": sorted(combo),
+                "combo_key": " + ".join(sorted(combo)),
+                "effective_permissions": sorted(permissions),
+                "severity": meta["severity"].value,
+                "title": meta["title"],
+                "description": meta["description"],
+                "attack_story": meta["attack_story"],
+                "tags": meta["tags"],
+                "narrative": "",
+            }
+        )
+    return records
+
+
+def enumerate_escalation_paths(account_id: str) -> list[dict]:
+    """
+    Enumerate all IAM principals in the account and detect privilege escalation paths.
+    """
+    try:
+        iam = boto3.client("iam", region_name="us-east-1")
+    except NoCredentialsError:
+        return []
+    except Exception as e:
+        print(f"[escalation] iam client error: {e}", file=sys.stderr)
+        return []
+
+    paths = []
+
+    try:
+        paginator = iam.get_paginator("list_users")
+        for page in paginator.paginate():
+            for user in page.get("Users", []):
+                principal_name = user["UserName"]
+                principal_arn = user["Arn"]
+                permissions = _collect_principal_permissions(
+                    iam,
+                    "user",
+                    principal_name,
+                    principal_arn,
+                )
+                paths.extend(
+                    _build_path_records(
+                        permissions,
+                        principal_arn,
+                        "user",
+                        principal_name,
+                        account_id,
+                    )
+                )
+    except (ClientError, NoCredentialsError) as e:
+        print(f"[escalation] user enumeration error: {e}", file=sys.stderr)
+
+    try:
+        paginator = iam.get_paginator("list_roles")
+        for page in paginator.paginate():
+            for role in page.get("Roles", []):
+                principal_name = role["RoleName"]
+                principal_arn = role["Arn"]
+                if (
+                    principal_arn.startswith("arn:aws:iam::aws:")
+                    or "/aws-service-role/" in principal_arn
+                ):
+                    continue
+                permissions = _collect_principal_permissions(
+                    iam,
+                    "role",
+                    principal_name,
+                    principal_arn,
+                )
+                paths.extend(
+                    _build_path_records(
+                        permissions,
+                        principal_arn,
+                        "role",
+                        principal_name,
+                        account_id,
+                    )
+                )
+    except (ClientError, NoCredentialsError) as e:
+        print(f"[escalation] role enumeration error: {e}", file=sys.stderr)
+
+    return paths

@@ -290,3 +290,119 @@ async def test_get_rewrites_filter_by_status(client, auth_token):
     assert response.status_code == 200
     for rewrite in response.json():
         assert rewrite["rewrite_status"] == "verified"
+
+
+@pytest.mark.asyncio
+async def test_escalation_paths_no_credentials(client, auth_token):
+    token = await auth_token()
+
+    with patch(
+        "iam_guardian.api.routes.enumerate_escalation_paths",
+        return_value=[],
+    ):
+        response = await client.get(
+            "/audit/escalation-paths?account_id=123456789012",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_paths"] == 0
+    assert data["paths"] == []
+
+
+@pytest.mark.asyncio
+async def test_escalation_paths_with_findings(client, auth_token):
+    token = await auth_token()
+    mock_paths = [
+        {
+            "principal_arn": "arn:aws:iam::123456789012:role/DevRole",
+            "principal_type": "role",
+            "principal_name": "DevRole",
+            "matched_combo": ["iam:passrole", "lambda:createfunction"],
+            "effective_permissions": ["iam:passrole", "lambda:createfunction"],
+            "severity": "critical",
+            "title": "Privilege escalation: iam:PassRole + lambda:CreateFunction",
+            "description": "Can attach admin role to Lambda.",
+            "attack_story": "Attacker creates Lambda.",
+            "tags": ["privilege-escalation", "MITRE-T1098"],
+            "narrative": "",
+        }
+    ]
+
+    with patch(
+        "iam_guardian.api.routes.enumerate_escalation_paths",
+        return_value=mock_paths,
+    ), patch(
+        "iam_guardian.api.routes.generate_narratives_batch",
+        side_effect=lambda paths: [
+            {**path, "narrative": "Mocked narrative."} for path in paths
+        ],
+    ):
+        response = await client.get(
+            "/audit/escalation-paths?account_id=123456789012",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_paths"] == 1
+    assert data["critical_count"] == 1
+    assert data["paths"][0]["narrative"] == "Mocked narrative."
+    assert data["paths"][0]["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_escalation_paths_requires_auth(client):
+    response = await client.get("/audit/escalation-paths")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_escalation_paths_sorted_critical_first(client, auth_token):
+    token = await auth_token()
+    mock_paths = [
+        {
+            **_base_path(),
+            "severity": "high",
+            "title": "High path",
+            "matched_combo": ["iam:createaccesskey"],
+            "narrative": "",
+        },
+        {
+            **_base_path(),
+            "severity": "critical",
+            "title": "Critical path",
+            "matched_combo": ["iam:passrole", "lambda:createfunction"],
+            "narrative": "",
+        },
+    ]
+
+    with patch(
+        "iam_guardian.api.routes.enumerate_escalation_paths",
+        return_value=mock_paths,
+    ), patch(
+        "iam_guardian.api.routes.generate_narratives_batch",
+        side_effect=lambda paths: [{**path, "narrative": "n"} for path in paths],
+    ):
+        response = await client.get(
+            "/audit/escalation-paths?account_id=123456789012",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    data = response.json()
+    assert data["paths"][0]["severity"] == "critical"
+    assert data["paths"][1]["severity"] == "high"
+
+
+def _base_path():
+    return {
+        "principal_arn": "arn:aws:iam::123456789012:role/R",
+        "principal_type": "role",
+        "principal_name": "R",
+        "effective_permissions": ["iam:passrole"],
+        "description": "desc",
+        "attack_story": "story",
+        "tags": [],
+    }

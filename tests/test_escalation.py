@@ -172,3 +172,93 @@ def test_case_insensitive_action_matching():
     findings = check_escalation_paths(policy, RESOURCE_ARN)
 
     assert any("lambda" in finding.title.lower() for finding in findings)
+
+
+def test_build_path_records_returns_matching_combos():
+    from iam_guardian.auditors.escalation import _build_path_records
+
+    permissions = {"iam:passrole", "lambda:createfunction"}
+    records = _build_path_records(
+        permissions,
+        "arn:aws:iam::123456789012:role/DevRole",
+        "role",
+        "DevRole",
+        "123456789012",
+    )
+
+    assert len(records) >= 1
+    titles = [record["title"] for record in records]
+    assert any("lambda" in title.lower() for title in titles)
+
+
+def test_build_path_records_empty_on_no_match():
+    from iam_guardian.auditors.escalation import _build_path_records
+
+    records = _build_path_records(
+        {"s3:getobject"},
+        "arn:aws:iam::123456789012:role/ReadOnly",
+        "role",
+        "ReadOnly",
+        "123456789012",
+    )
+
+    assert records == []
+
+
+def test_enumerate_escalation_paths_no_credentials():
+    from unittest.mock import patch
+
+    from botocore.exceptions import NoCredentialsError
+
+    with patch("boto3.client", side_effect=NoCredentialsError()):
+        from iam_guardian.auditors.escalation import enumerate_escalation_paths
+
+        result = enumerate_escalation_paths("123456789012")
+
+    assert result == []
+
+
+def test_enumerate_escalation_paths_with_mock_iam():
+    """Full enumeration with mocked boto3 IAM client."""
+    from unittest.mock import MagicMock, patch
+
+    from iam_guardian.auditors.escalation import enumerate_escalation_paths
+
+    mock_iam = MagicMock()
+
+    mock_iam.get_paginator.side_effect = lambda op: {
+        "list_users": _make_paginator(
+            [{"UserName": "dev-user", "Arn": "arn:aws:iam::123456789012:user/dev-user"}]
+        ),
+        "list_roles": _make_paginator([]),
+    }[op]
+
+    mock_iam.list_user_policies.return_value = {"PolicyNames": ["DevPolicy"]}
+    mock_iam.get_user_policy.return_value = {
+        "PolicyDocument": {
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": ["iam:PassRole", "lambda:CreateFunction"],
+                    "Resource": "*",
+                }
+            ]
+        }
+    }
+    mock_iam.list_attached_user_policies.return_value = {"AttachedPolicies": []}
+
+    with patch("boto3.client", return_value=mock_iam):
+        result = enumerate_escalation_paths("123456789012")
+
+    assert len(result) >= 1
+    assert result[0]["principal_name"] == "dev-user"
+    assert any("lambda" in record["title"].lower() for record in result)
+
+
+def _make_paginator(items):
+    """Helper: returns a mock paginator that yields one page."""
+    from unittest.mock import MagicMock
+
+    mock_pager = MagicMock()
+    mock_pager.paginate.return_value = [{"Users": items, "Roles": items}]
+    return mock_pager

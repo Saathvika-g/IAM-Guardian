@@ -8,15 +8,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iam_guardian.auditors.cross_account import check_cross_account_trust
-from iam_guardian.auditors.escalation import check_escalation_paths
+from iam_guardian.auditors.escalation import (
+    check_escalation_paths,
+    enumerate_escalation_paths,
+)
+from iam_guardian.auditors.narrator import generate_narratives_batch
 from iam_guardian.auditors.wildcard_actions import check_wildcard_actions
 from iam_guardian.auth import get_current_user
 from iam_guardian.database import get_db
-from iam_guardian.db_models import FindingORM, PolicyRewriteORM
+from iam_guardian.db_models import EscalationPathORM, FindingORM, PolicyRewriteORM
 from iam_guardian.explainer import explain_finding
 from iam_guardian.models import (
     AuditRequest,
     AuditResponse,
+    EscalationPathRecord,
+    EscalationScanResponse,
     Finding,
     FindingRecord,
     PolicyRewriteRecord,
@@ -281,3 +287,97 @@ async def get_rewrites(
         )
         for row in rows
     ]
+
+
+@router.get("/audit/escalation-paths", response_model=EscalationScanResponse)
+async def get_escalation_paths(
+    account_id: str = "123456789012",
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> EscalationScanResponse:
+    loop = asyncio.get_event_loop()
+
+    raw_paths = await loop.run_in_executor(
+        None,
+        enumerate_escalation_paths,
+        account_id,
+    )
+
+    if not raw_paths:
+        return EscalationScanResponse(
+            account_id=account_id,
+            scan_id=str(uuid4()),
+            total_paths=0,
+            critical_count=0,
+            high_count=0,
+            paths=[],
+            scanned_at=datetime.utcnow().isoformat(),
+        )
+
+    enriched_paths = await loop.run_in_executor(
+        None,
+        generate_narratives_batch,
+        raw_paths,
+    )
+
+    severity_rank = {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+        "informational": 4,
+    }
+    enriched_paths.sort(key=lambda path: severity_rank.get(path["severity"], 99))
+
+    scan_id = str(uuid4())
+    orm_rows = []
+    for path in enriched_paths:
+        row = EscalationPathORM(
+            account_id=account_id,
+            principal_arn=path["principal_arn"],
+            principal_type=path["principal_type"],
+            principal_name=path["principal_name"],
+            matched_combo=path["matched_combo"],
+            effective_permissions=path["effective_permissions"],
+            severity=path["severity"],
+            title=path["title"],
+            description=path["description"],
+            attack_story=path["attack_story"],
+            narrative=path["narrative"],
+            tags=path["tags"],
+        )
+        db.add(row)
+        orm_rows.append(row)
+    await db.commit()
+    for row in orm_rows:
+        await db.refresh(row)
+
+    path_records = [
+        EscalationPathRecord(
+            id=row.id,
+            account_id=account_id,
+            principal_arn=path["principal_arn"],
+            principal_type=path["principal_type"],
+            principal_name=path["principal_name"],
+            matched_combo=path["matched_combo"],
+            effective_permissions=path["effective_permissions"],
+            severity=path["severity"],
+            title=path["title"],
+            description=path["description"],
+            attack_story=path["attack_story"],
+            narrative=path["narrative"],
+            tags=path["tags"],
+            created_at=row.created_at.isoformat(),
+        )
+        for row, path in zip(orm_rows, enriched_paths)
+    ]
+
+    return EscalationScanResponse(
+        account_id=account_id,
+        scan_id=scan_id,
+        total_paths=len(path_records),
+        critical_count=sum(1 for path in path_records if path.severity == "critical"),
+        high_count=sum(1 for path in path_records if path.severity == "high"),
+        paths=path_records,
+        scanned_at=datetime.utcnow().isoformat(),
+    )
