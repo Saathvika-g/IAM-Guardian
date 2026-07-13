@@ -122,3 +122,30 @@ class EscalationScanResponse(BaseModel):
     high_count: int
     paths: List[EscalationPathRecord]
     scanned_at: str
+
+
+class ControlResult(BaseModel):
+    control_id: str
+    control_title: str
+    status: str
+    finding_count: int
+    findings: List[str]
+
+
+class FrameworkSection(BaseModel):
+    framework: str
+    total_controls: int
+    passing_controls: int
+    failing_controls: int
+    pass_rate: float
+    controls: List[ControlResult]
+    executive_summary: str
+
+
+class ComplianceReport(BaseModel):
+    account_id: str
+    report_id: str
+    generated_at: str
+    total_findings_analyzed: int
+    frameworks: List[FrameworkSection]
+    overall_pass_rate: float

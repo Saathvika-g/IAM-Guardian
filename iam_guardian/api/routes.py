@@ -15,12 +15,14 @@ from iam_guardian.auditors.escalation import (
 from iam_guardian.auditors.narrator import generate_narratives_batch
 from iam_guardian.auditors.wildcard_actions import check_wildcard_actions
 from iam_guardian.auth import get_current_user
+from iam_guardian.compliance.report_builder import build_compliance_report
 from iam_guardian.database import get_db
 from iam_guardian.db_models import EscalationPathORM, FindingORM, PolicyRewriteORM
 from iam_guardian.explainer import explain_finding
 from iam_guardian.models import (
     AuditRequest,
     AuditResponse,
+    ComplianceReport,
     EscalationPathRecord,
     EscalationScanResponse,
     Finding,
@@ -381,3 +383,39 @@ async def get_escalation_paths(
         paths=path_records,
         scanned_at=datetime.utcnow().isoformat(),
     )
+
+
+@router.get("/audit/compliance-report", response_model=ComplianceReport)
+async def get_compliance_report(
+    account_id: str = "123456789012",
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> ComplianceReport:
+    stmt = (
+        select(FindingORM)
+        .order_by(FindingORM.created_at.desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    findings_dicts = [
+        {
+            "check_name": row.check_name,
+            "severity": row.severity,
+            "resource_arn": row.resource_arn,
+            "status": row.status,
+        }
+        for row in rows
+    ]
+
+    loop = asyncio.get_event_loop()
+    report = await loop.run_in_executor(
+        None,
+        build_compliance_report,
+        findings_dicts,
+        account_id,
+    )
+
+    return report

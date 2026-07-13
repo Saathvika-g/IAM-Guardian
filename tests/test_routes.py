@@ -2,6 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
+from iam_guardian.models import ComplianceReport, ControlResult, FrameworkSection
+
 PATCH_TARGET = "iam_guardian.api.routes.explain_finding"
 REWRITE_PATCH_TARGET = "iam_guardian.api.routes.rewrite_policy"
 SIMULATE_PATCH_TARGET = "iam_guardian.api.routes.simulate_rewrite"
@@ -406,3 +408,95 @@ def _base_path():
         "attack_story": "story",
         "tags": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_compliance_report_requires_auth(client):
+    response = await client.get("/audit/compliance-report")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_compliance_report_empty_db(client, auth_token):
+    token = await auth_token()
+
+    with patch(
+        "iam_guardian.api.routes.build_compliance_report",
+        return_value=ComplianceReport(
+            account_id="123456789012",
+            report_id="test-report-id",
+            generated_at="2025-01-15T00:00:00",
+            total_findings_analyzed=0,
+            frameworks=[],
+            overall_pass_rate=1.0,
+        ),
+    ):
+        response = await client.get(
+            "/audit/compliance-report?account_id=123456789012",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["overall_pass_rate"] == 1.0
+    assert data["total_findings_analyzed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_compliance_report_with_findings(client, auth_token):
+    token = await auth_token()
+
+    with patch(PATCH_TARGET, return_value="mocked"):
+        await client.post(
+            "/audit/run",
+            json={"account_id": "123456789012"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    mock_report = ComplianceReport(
+        account_id="123456789012",
+        report_id="abc-123",
+        generated_at="2025-01-15T00:00:00",
+        total_findings_analyzed=3,
+        frameworks=[
+            FrameworkSection(
+                framework="CIS",
+                total_controls=5,
+                passing_controls=3,
+                failing_controls=2,
+                pass_rate=0.6,
+                controls=[
+                    ControlResult(
+                        control_id="CIS-1.16",
+                        control_title="Ensure IAM policies...",
+                        status="fail",
+                        finding_count=2,
+                        findings=["Overly permissive IAM policy: wildcard Action"],
+                    )
+                ],
+                executive_summary=(
+                    "Two CIS controls are failing. Remediate CIS-1.16 immediately."
+                ),
+            )
+        ],
+        overall_pass_rate=0.6,
+    )
+
+    with patch(
+        "iam_guardian.api.routes.build_compliance_report",
+        return_value=mock_report,
+    ):
+        response = await client.get(
+            "/audit/compliance-report?account_id=123456789012",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_findings_analyzed"] == 3
+    assert len(data["frameworks"]) == 1
+    assert data["frameworks"][0]["framework"] == "CIS"
+    assert data["frameworks"][0]["pass_rate"] == 0.6
+    assert "executive_summary" in data["frameworks"][0]
+    assert data["overall_pass_rate"] == 0.6
