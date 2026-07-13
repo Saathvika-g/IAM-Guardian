@@ -3,6 +3,8 @@ import asyncio
 import iam_guardian.db_models  # noqa: F401
 from iam_guardian.database import Base, engine
 
+# Registered models: FindingORM, PolicyRewriteORM, EscalationPathORM, ScanORM
+
 
 async def init() -> None:
     async with engine.begin() as conn:

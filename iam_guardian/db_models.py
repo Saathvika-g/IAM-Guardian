@@ -17,12 +17,35 @@ class FindingORM(Base):
         primary_key=True,
         default=uuid4,
     )
+    scan_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        nullable=True,
+        index=True,
+    )
     check_name: Mapped[str] = mapped_column(String(255), nullable=False)
     severity: Mapped[str] = mapped_column(String(50), nullable=False)
     resource_arn: Mapped[str] = mapped_column(String(500), nullable=False)
     raw_data: Mapped[dict] = mapped_column(JSON, nullable=False)
     llm_explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="open", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ScanORM(Base):
+    __tablename__ = "scans"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    account_id: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(50), default="completed", nullable=False)
+    total_findings: Mapped[int] = mapped_column(default=0, nullable=False)
+    critical_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    high_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    medium_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    low_count: Mapped[int] = mapped_column(default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

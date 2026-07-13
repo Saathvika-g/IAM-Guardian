@@ -71,6 +71,30 @@ async def test_audit_run_stores_findings(client, auth_token):
 
 
 @pytest.mark.asyncio
+async def test_audit_run_returns_scan_id(client, auth_token):
+    token = await auth_token()
+
+    with patch(PATCH_TARGET, return_value="mocked explanation"):
+        response = await client.post(
+            "/audit/run",
+            json={"account_id": "123456789012"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    scan_id = response.json()["audit_id"]
+    assert len(scan_id) == 36
+
+    scans_response = await client.get(
+        "/audit/scans",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert scans_response.status_code == 200
+    assert any(scan["id"] == scan_id for scan in scans_response.json())
+
+
+@pytest.mark.asyncio
 async def test_audit_findings_requires_auth(client):
     response = await client.get("/audit/findings")
 
@@ -101,6 +125,38 @@ async def test_audit_findings_returns_list(client, auth_token):
     assert isinstance(data, list)
     assert len(data) >= 1
     assert all(item["llm_explanation"] == "mocked explanation" for item in data)
+
+
+@pytest.mark.asyncio
+async def test_findings_filterable_by_scan_id(client, auth_token):
+    token = await auth_token()
+
+    with patch(PATCH_TARGET, return_value="first scan"):
+        first_response = await client.post(
+            "/audit/run",
+            json={"account_id": "123456789012"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    with patch(PATCH_TARGET, return_value="second scan"):
+        second_response = await client.post(
+            "/audit/run",
+            json={"account_id": "123456789012"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    first_scan_id = first_response.json()["audit_id"]
+    second_scan_id = second_response.json()["audit_id"]
+
+    response = await client.get(
+        f"/audit/findings?scan_id={first_scan_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    findings = response.json()
+    assert len(findings) >= 1
+    assert all(finding["scan_id"] == first_scan_id for finding in findings)
+    assert all(finding["scan_id"] != second_scan_id for finding in findings)
 
 
 @pytest.mark.asyncio

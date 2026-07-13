@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class Severity(str, Enum):
@@ -39,6 +39,7 @@ class AuditResponse(BaseModel):
 
 class FindingRecord(BaseModel):
     id: str
+    scan_id: Optional[str] = None
     check_name: str
     severity: str
     resource_arn: str
@@ -48,6 +49,54 @@ class FindingRecord(BaseModel):
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        allowed = {"open", "in_progress", "resolved", "accepted_risk"}
+        if value not in allowed:
+            raise ValueError(
+                "status must be one of: open, in_progress, resolved, accepted_risk"
+            )
+        return value
+
+
+class ScanRecord(BaseModel):
+    id: str
+    account_id: str
+    status: str
+    total_findings: int
+    critical_count: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    created_at: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeltaFinding(BaseModel):
+    id: str
+    scan_id: Optional[str] = None
+    check_name: str
+    severity: str
+    resource_arn: str
+    status: str
+    created_at: str
+
+
+class ScanDelta(BaseModel):
+    scan_a: str
+    scan_b: str
+    new_findings: List[DeltaFinding]
+    resolved_findings: List[DeltaFinding]
+    persisted_findings: List[DeltaFinding]
+    regressed_findings: List[DeltaFinding]
+    summary: str
 
 
 class IAMStatement(BaseModel):
