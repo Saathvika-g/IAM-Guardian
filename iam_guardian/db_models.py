@@ -91,3 +91,18 @@ class EscalationPathORM(Base):
     narrative: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ChatSessionORM(Base):
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    session_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(10), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -261,6 +261,34 @@ class AnomalousEventRecord(BaseModel):
     narrative: Optional[str] = None
 
 
+class ChatMessage(BaseModel):
+    message: str
+    session_id: str = "default"
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    message: str
+    response: str
+    username: str
+    turn_number: int
+
+
+class ChatHistoryRecord(BaseModel):
+    role: str
+    content: str
+    created_at: str
+
+
+class ChatSessionSummary(BaseModel):
+    session_id: str
+    username: str
+    total_turns: int
+    last_message_at: str
+    preview: str
+    narrative: Optional[str] = None
+
+
 class CloudTrailAnomalyReport(BaseModel):
     account_id: str
     period_days: int
