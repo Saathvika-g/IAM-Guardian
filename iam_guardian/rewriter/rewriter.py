@@ -4,6 +4,7 @@ import sys
 from groq import Groq
 from pydantic import ValidationError
 
+from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 from iam_guardian.models import IAMPolicyModel
 
@@ -42,7 +43,9 @@ def _build_rewrite_prompt(policy_doc: dict, strict: bool = False) -> str:
     )
 
 
-def _call_groq_json(prompt: str) -> dict:
+@with_groq_retry
+def _call_groq_json_inner(prompt: str) -> dict:
+    """Retried inner call that returns a parsed dict."""
     response = client.chat.completions.create(
         model=MODEL,
         max_tokens=800,
@@ -62,6 +65,10 @@ def _call_groq_json(prompt: str) -> dict:
     return json.loads(raw)
 
 
+def _call_groq_json(prompt: str) -> dict:
+    return _call_groq_json_inner(prompt)
+
+
 def _build_diff_prompt(original: dict, rewritten: dict) -> str:
     original_json = json.dumps(original, indent=2)
     rewritten_json = json.dumps(rewritten, indent=2)
@@ -76,22 +83,28 @@ def _build_diff_prompt(original: dict, rewritten: dict) -> str:
     )
 
 
+@with_groq_retry
+def _call_groq_diff_inner(prompt: str) -> str:
+    """Retried inner call for diff summary."""
+    response = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=200,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a cloud security expert. Be concise and plain.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
 def _get_diff_summary(original: dict, rewritten: dict) -> str:
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            max_tokens=200,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a cloud security expert. Be concise and plain.",
-                },
-                {"role": "user", "content": _build_diff_prompt(original, rewritten)},
-            ],
-        )
-        return response.choices[0].message.content.strip()
+        return _call_groq_diff_inner(_build_diff_prompt(original, rewritten))
     except Exception as e:
-        print(f"[rewriter] diff error: {e}", file=sys.stderr)
+        print(f"[rewriter] diff error after retries: {e}", file=sys.stderr)
         return "Diff summary unavailable."
 
 

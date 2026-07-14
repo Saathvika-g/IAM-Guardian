@@ -3,6 +3,8 @@ import sys
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
+from iam_guardian.core.aws_resilience import handle_client_error
+
 
 def _extract_actions(policy_doc: dict) -> list[str]:
     actions = []
@@ -92,7 +94,13 @@ def simulate_rewrite(
                 error_code = ce.response["Error"]["Code"]
                 if error_code in ("InvalidInput", "ValidationError"):
                     continue
-                raise
+                handle_client_error(
+                    ce,
+                    check_name="simulate_custom_policy",
+                    resource_arn="arn:aws:iam::*:policy/*",
+                    context=f"action={action}",
+                )
+                denied_actions.append(action)
 
         status = "needs_review" if denied_actions else "verified"
         detail = (

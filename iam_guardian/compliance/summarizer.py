@@ -2,6 +2,7 @@ import sys
 
 from groq import Groq
 
+from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
 client = Groq(api_key=get_groq_key())
@@ -37,6 +38,19 @@ def _build_summary_prompt(
     )
 
 
+@with_groq_retry
+def _call_groq_summary(prompt: str) -> str:
+    response = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=150,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
 def generate_section_summary(
     framework: str,
     passed_controls: list[str],
@@ -48,25 +62,16 @@ def generate_section_summary(
     Falls back gracefully on any error.
     """
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            max_tokens=150,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": _build_summary_prompt(
-                        framework,
-                        passed_controls,
-                        failed_controls,
-                        failed_findings,
-                    ),
-                },
-            ],
+        return _call_groq_summary(
+            _build_summary_prompt(
+                framework,
+                passed_controls,
+                failed_controls,
+                failed_findings,
+            )
         )
-        return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"[summarizer] error: {e}", file=sys.stderr)
+        print(f"[summarizer] error after retries: {e}", file=sys.stderr)
         return (
             f"{framework} compliance assessment could not be summarized. "
             f"Review {len(failed_controls)} failing control(s) manually."

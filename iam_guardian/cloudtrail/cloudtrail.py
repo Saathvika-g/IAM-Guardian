@@ -6,6 +6,8 @@ from typing import Optional
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
+from iam_guardian.core.aws_resilience import handle_client_error
+
 WATCHED_EVENTS = {
     "CreateAccessKey",
     "DeleteAccessKey",
@@ -191,7 +193,13 @@ def fetch_iam_events(
                 if error_code == "InvalidLookupAttributesException":
                     print(f"[cloudtrail] lookup attribute error: {e}", file=sys.stderr)
                     break
-                raise
+                handle_client_error(
+                    e,
+                    check_name="lookup_events",
+                    resource_arn=f"arn:aws:cloudtrail:*:{account_id}:trail/*",
+                    context=f"days={days}",
+                )
+                break
 
             raw_events = response.get("Events", [])
             for raw in raw_events:
@@ -208,9 +216,13 @@ def fetch_iam_events(
         print("[cloudtrail] no AWS credentials configured", file=sys.stderr)
         return []
     except ClientError as e:
-        print(f"[cloudtrail] ClientError: {e}", file=sys.stderr)
+        handle_client_error(
+            e,
+            check_name="lookup_events",
+            resource_arn=f"arn:aws:cloudtrail:*:{account_id}:trail/*",
+            context=f"days={days}",
+        )
         return []
     except Exception as e:
         print(f"[cloudtrail] unexpected error: {e}", file=sys.stderr)
         return []
-

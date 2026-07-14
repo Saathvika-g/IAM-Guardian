@@ -2,6 +2,7 @@ import sys
 
 from groq import Groq
 
+from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
 client = Groq(api_key=get_groq_key())
@@ -36,19 +37,24 @@ def _build_narrative_prompt(event: dict) -> str:
     )
 
 
+@with_groq_retry
+def _call_groq_anomaly_narrative(prompt: str) -> str:
+    response = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=250,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+    )
+    return response.choices[0].message.content.strip()
+
+
 def generate_anomaly_narrative(event: dict) -> str:
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            max_tokens=250,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": _build_narrative_prompt(event)},
-            ],
-        )
-        return response.choices[0].message.content.strip()
+        return _call_groq_anomaly_narrative(_build_narrative_prompt(event))
     except Exception as e:
-        print(f"[anomaly_narrator] error: {e}", file=sys.stderr)
+        print(f"[anomaly_narrator] error after retries: {e}", file=sys.stderr)
         return (
             f"Narrative unavailable: {type(e).__name__}. "
             f"Review the {len(event.get('anomaly_reasons', []))} anomaly signal(s) manually."

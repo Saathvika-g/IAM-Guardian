@@ -1,6 +1,6 @@
-import os
 import sys
 from groq import Groq
+from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
 client = Groq(api_key=get_groq_key())
@@ -15,6 +15,20 @@ SYSTEM_PROMPT = (
 )
 
 
+@with_groq_retry
+def _call_groq_explain(user_prompt: str) -> str:
+    """Inner function retried on rate limit and transient Groq errors."""
+    response = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=MAX_TOKENS,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+    return response.choices[0].message.content
+
+
 def explain_finding(finding: dict) -> str:
     user_prompt = (
         f"Finding: {finding.get('title', finding.get('check_name', 'Unknown'))}\n"
@@ -25,15 +39,7 @@ def explain_finding(finding: dict) -> str:
         "if an attacker exploited it."
     )
     try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        return response.choices[0].message.content
+        return _call_groq_explain(user_prompt)
     except Exception as e:
-        print(f"[explainer] error: {e}", file=sys.stderr)
+        print(f"[explainer] error after retries: {e}", file=sys.stderr)
         return f"Explanation unavailable: {type(e).__name__}"

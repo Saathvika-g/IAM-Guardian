@@ -6,6 +6,7 @@ from uuid import uuid4
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
+from iam_guardian.core.aws_resilience import handle_client_error
 from iam_guardian.models import Finding, Severity
 
 ESCALATION_COMBOS = {
@@ -238,10 +239,15 @@ def _get_inline_policy_doc(
             resp = iam_client.get_role_policy(
                 RoleName=principal_name,
                 PolicyName=policy_name,
-            )
+        )
         return resp.get("PolicyDocument", {})
     except ClientError as e:
-        print(f"[escalation] inline policy fetch error: {e}", file=sys.stderr)
+        handle_client_error(
+            e,
+            check_name=f"get_{principal_type}_policy",
+            resource_arn=f"{principal_type}:{principal_name}:{policy_name}",
+            context=f"inline policy document for {principal_name}",
+        )
         return {}
 
 
@@ -255,7 +261,12 @@ def _get_attached_policy_doc(iam_client, policy_arn: str) -> dict:
         )
         return version_resp["PolicyVersion"].get("Document", {})
     except ClientError as e:
-        print(f"[escalation] managed policy fetch error: {e}", file=sys.stderr)
+        handle_client_error(
+            e,
+            check_name="get_policy_version",
+            resource_arn=policy_arn,
+            context="managed policy document",
+        )
         return {}
 
 
@@ -282,6 +293,15 @@ def _collect_principal_permissions(
             )
             all_permissions |= _enumerate_permissions(doc)
 
+    except ClientError as e:
+        handle_client_error(
+            e,
+            check_name=f"list_{principal_type}_policies",
+            resource_arn=principal_arn,
+            context=f"inline policies for {principal_name}",
+        )
+
+    try:
         if principal_type == "user":
             attached_resp = iam_client.list_attached_user_policies(
                 UserName=principal_name,
@@ -296,9 +316,11 @@ def _collect_principal_permissions(
             all_permissions |= _enumerate_permissions(doc)
 
     except ClientError as e:
-        print(
-            f"[escalation] permission collection error for {principal_arn}: {e}",
-            file=sys.stderr,
+        handle_client_error(
+            e,
+            check_name=f"list_attached_{principal_type}_policies",
+            resource_arn=principal_arn,
+            context=f"managed policies for {principal_name}",
         )
 
     return all_permissions
@@ -369,8 +391,10 @@ def enumerate_escalation_paths(account_id: str) -> list[dict]:
                         account_id,
                     )
                 )
-    except (ClientError, NoCredentialsError) as e:
-        print(f"[escalation] user enumeration error: {e}", file=sys.stderr)
+    except ClientError as e:
+        handle_client_error(e, "list_users", f"arn:aws:iam::{account_id}:*")
+    except NoCredentialsError as e:
+        print(f"[escalation] user enumeration credentials error: {e}", file=sys.stderr)
 
     try:
         paginator = iam.get_paginator("list_roles")
@@ -398,7 +422,9 @@ def enumerate_escalation_paths(account_id: str) -> list[dict]:
                         account_id,
                     )
                 )
-    except (ClientError, NoCredentialsError) as e:
-        print(f"[escalation] role enumeration error: {e}", file=sys.stderr)
+    except ClientError as e:
+        handle_client_error(e, "list_roles", f"arn:aws:iam::{account_id}:*")
+    except NoCredentialsError as e:
+        print(f"[escalation] role enumeration credentials error: {e}", file=sys.stderr)
 
     return paths
