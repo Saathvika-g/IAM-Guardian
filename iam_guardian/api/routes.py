@@ -15,6 +15,10 @@ from iam_guardian.auditors.escalation import (
 from iam_guardian.auditors.narrator import generate_narratives_batch
 from iam_guardian.auditors.wildcard_actions import check_wildcard_actions
 from iam_guardian.auth import get_current_user
+from iam_guardian.cloudtrail.analyzer import score_events
+from iam_guardian.cloudtrail.anomaly_narrator import generate_narratives_for_anomalies
+from iam_guardian.cloudtrail.anomaly_scorer import ANOMALY_THRESHOLD, score_all_events
+from iam_guardian.cloudtrail.cloudtrail import fetch_iam_events
 from iam_guardian.compliance.report_builder import build_compliance_report
 from iam_guardian.database import get_db
 from iam_guardian.db_models import (
@@ -27,12 +31,17 @@ from iam_guardian.explainer import explain_finding
 from iam_guardian.models import (
     AuditRequest,
     AuditResponse,
+    AnomalousEventRecord,
+    CloudTrailAnomalyReport,
+    CloudTrailEventRecord,
+    CloudTrailReportResponse,
     ComplianceReport,
     DeltaFinding,
     EscalationPathRecord,
     EscalationScanResponse,
     Finding,
     FindingRecord,
+    PrincipalActivityRecord,
     PolicyRewriteRecord,
     RewriteResponse,
     ScanDelta,
@@ -604,3 +613,177 @@ async def get_compliance_report(
     )
 
     return report
+
+
+@router.get("/audit/cloudtrail", response_model=CloudTrailReportResponse)
+async def get_cloudtrail_report(
+    account_id: str = "123456789012",
+    days: int = 90,
+    region: str = "us-east-1",
+    current_user: dict = Depends(get_current_user),
+) -> CloudTrailReportResponse:
+    loop = asyncio.get_event_loop()
+
+    events = await loop.run_in_executor(
+        None,
+        fetch_iam_events,
+        account_id,
+        days,
+        region,
+    )
+    report = await loop.run_in_executor(
+        None,
+        score_events,
+        events,
+        account_id,
+        days,
+    )
+
+    def event_to_record(event: dict) -> CloudTrailEventRecord:
+        return CloudTrailEventRecord(
+            event_id=event["event_id"],
+            event_name=event["event_name"],
+            event_time=event["event_time"],
+            region=event["region"],
+            source_ip=event["source_ip"],
+            user_agent=event["user_agent"],
+            error_code=event.get("error_code"),
+            error_message=event.get("error_message"),
+            identity_type=event["identity_type"],
+            principal_id=event["principal_id"],
+            account_id=event["account_id"],
+            actor_arn=event["actor_arn"],
+            session_name=event["session_name"],
+            weight=event["weight"],
+        )
+
+    def principal_to_record(principal) -> PrincipalActivityRecord:
+        return PrincipalActivityRecord(
+            principal_id=principal.principal_id,
+            identity_type=principal.identity_type,
+            account_id=principal.account_id,
+            actor_arn=principal.actor_arn,
+            event_count=principal.event_count,
+            high_weight_count=principal.high_weight_count,
+            total_score=principal.total_score,
+            anomaly_flags=principal.anomaly_flags,
+            flagged_events=[
+                event_to_record(event) for event in principal.flagged_events
+            ],
+        )
+
+    return CloudTrailReportResponse(
+        account_id=report.account_id,
+        period_days=report.period_days,
+        total_events=report.total_events,
+        watched_event_counts=report.watched_event_counts,
+        principals=[principal_to_record(principal) for principal in report.principals],
+        root_activity=[event_to_record(event) for event in report.root_activity],
+        high_score_principals=[
+            principal_to_record(principal)
+            for principal in report.high_score_principals
+        ],
+        error_events=[event_to_record(event) for event in report.error_events],
+        report_generated_at=report.report_generated_at,
+    )
+
+
+@router.get("/audit/cloudtrail-anomalies", response_model=CloudTrailAnomalyReport)
+async def get_cloudtrail_anomalies(
+    account_id: str = "123456789012",
+    days: int = 90,
+    region: str = "us-east-1",
+    min_score: int = ANOMALY_THRESHOLD,
+    current_user: dict = Depends(get_current_user),
+) -> CloudTrailAnomalyReport:
+    loop = asyncio.get_event_loop()
+
+    events = await loop.run_in_executor(
+        None,
+        fetch_iam_events,
+        account_id,
+        days,
+        region,
+    )
+    scored_events = await loop.run_in_executor(None, score_all_events, events)
+    anomalous = [
+        event for event in scored_events if event["anomaly_score"] >= min_score
+    ]
+
+    if anomalous:
+        enriched = await loop.run_in_executor(
+            None,
+            generate_narratives_for_anomalies,
+            anomalous,
+        )
+    else:
+        enriched = []
+
+    breakdown = {
+        "after_hours": sum(
+            1
+            for event in scored_events
+            if any(
+                "business hours" in reason
+                for reason in event.get("anomaly_reasons", [])
+            )
+        ),
+        "new_ip": sum(
+            1
+            for event in scored_events
+            if any(
+                "New source IP" in reason
+                for reason in event.get("anomaly_reasons", [])
+            )
+        ),
+        "root_activity": sum(
+            1
+            for event in scored_events
+            if any(
+                "root account" in reason
+                for reason in event.get("anomaly_reasons", [])
+            )
+        ),
+        "new_event_type": sum(
+            1
+            for event in scored_events
+            if any(
+                "First time" in reason
+                for reason in event.get("anomaly_reasons", [])
+            )
+        ),
+    }
+
+    anomaly_records = [
+        AnomalousEventRecord(
+            event_id=event["event_id"],
+            event_name=event["event_name"],
+            event_time=event["event_time"],
+            region=event["region"],
+            source_ip=event["source_ip"],
+            user_agent=event.get("user_agent", ""),
+            error_code=event.get("error_code"),
+            identity_type=event["identity_type"],
+            principal_id=event["principal_id"],
+            account_id=event["account_id"],
+            actor_arn=event["actor_arn"],
+            session_name=event["session_name"],
+            weight=event["weight"],
+            anomaly_score=event["anomaly_score"],
+            anomaly_reasons=event["anomaly_reasons"],
+            is_anomaly=event["is_anomaly"],
+            narrative=event.get("narrative"),
+        )
+        for event in enriched
+    ]
+
+    return CloudTrailAnomalyReport(
+        account_id=account_id,
+        period_days=days,
+        total_events_analyzed=len(scored_events),
+        total_anomalies=len(anomaly_records),
+        anomaly_threshold=min_score,
+        anomalies=anomaly_records,
+        score_breakdown=breakdown,
+        report_generated_at=datetime.utcnow().isoformat(),
+    )

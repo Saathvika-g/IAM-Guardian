@@ -556,3 +556,168 @@ async def test_compliance_report_with_findings(client, auth_token):
     assert data["frameworks"][0]["pass_rate"] == 0.6
     assert "executive_summary" in data["frameworks"][0]
     assert data["overall_pass_rate"] == 0.6
+
+
+@pytest.mark.asyncio
+async def test_cloudtrail_anomalies_requires_auth(client):
+    response = await client.get("/audit/cloudtrail-anomalies")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_cloudtrail_anomalies_no_events(client, auth_token):
+    token = await auth_token()
+
+    with patch("iam_guardian.api.routes.fetch_iam_events", return_value=[]), patch(
+        "iam_guardian.api.routes.score_all_events",
+        return_value=[],
+    ), patch(
+        "iam_guardian.api.routes.generate_narratives_for_anomalies",
+        return_value=[],
+    ):
+        response = await client.get(
+            "/audit/cloudtrail-anomalies?account_id=123456789012&days=7",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_events_analyzed"] == 0
+    assert data["total_anomalies"] == 0
+    assert data["anomalies"] == []
+
+
+@pytest.mark.asyncio
+async def test_cloudtrail_anomalies_with_scored_events(client, auth_token):
+    token = await auth_token()
+    scored = [
+        {
+            "event_id": "e1",
+            "event_name": "CreateAccessKey",
+            "event_time": "2025-01-15T23:00:00+00:00",
+            "region": "us-east-1",
+            "source_ip": "99.0.0.1",
+            "user_agent": "aws-cli",
+            "error_code": None,
+            "identity_type": "IAMUser",
+            "principal_id": "alice",
+            "account_id": "123456789012",
+            "actor_arn": "arn:aws:iam::123456789012:user/alice",
+            "session_name": "",
+            "weight": 3,
+            "anomaly_score": 7,
+            "is_anomaly": True,
+            "anomaly_reasons": ["After hours", "New IP"],
+        }
+    ]
+    enriched = [
+        {
+            **scored[0],
+            "narrative": "Attacker may be harvesting keys.",
+        }
+    ]
+
+    with patch("iam_guardian.api.routes.fetch_iam_events", return_value=[]), patch(
+        "iam_guardian.api.routes.score_all_events",
+        return_value=scored,
+    ), patch(
+        "iam_guardian.api.routes.generate_narratives_for_anomalies",
+        return_value=enriched,
+    ):
+        response = await client.get(
+            "/audit/cloudtrail-anomalies?account_id=123456789012",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_anomalies"] == 1
+    assert data["anomalies"][0]["anomaly_score"] == 7
+    assert data["anomalies"][0]["narrative"] == "Attacker may be harvesting keys."
+    assert data["anomalies"][0]["principal_id"] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_cloudtrail_anomalies_score_breakdown_present(client, auth_token):
+    token = await auth_token()
+
+    with patch("iam_guardian.api.routes.fetch_iam_events", return_value=[]), patch(
+        "iam_guardian.api.routes.score_all_events",
+        return_value=[],
+    ), patch(
+        "iam_guardian.api.routes.generate_narratives_for_anomalies",
+        return_value=[],
+    ):
+        response = await client.get(
+            "/audit/cloudtrail-anomalies",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    data = response.json()
+    assert "score_breakdown" in data
+    breakdown = data["score_breakdown"]
+    assert "after_hours" in breakdown
+    assert "new_ip" in breakdown
+    assert "root_activity" in breakdown
+    assert "new_event_type" in breakdown
+
+
+@pytest.mark.asyncio
+async def test_cloudtrail_anomalies_min_score_filter(client, auth_token):
+    token = await auth_token()
+    all_scored = [
+        {
+            "event_id": "e1",
+            "event_name": "X",
+            "event_time": "2025-01-15T14:00:00+00:00",
+            "region": "us-east-1",
+            "source_ip": "1.1.1.1",
+            "user_agent": "cli",
+            "error_code": None,
+            "identity_type": "IAMUser",
+            "principal_id": "u",
+            "account_id": "123456789012",
+            "actor_arn": "arn:x",
+            "session_name": "",
+            "weight": 1,
+            "anomaly_score": 3,
+            "is_anomaly": False,
+            "anomaly_reasons": [],
+        },
+        {
+            "event_id": "e2",
+            "event_name": "Y",
+            "event_time": "2025-01-15T14:00:00+00:00",
+            "region": "us-east-1",
+            "source_ip": "2.2.2.2",
+            "user_agent": "cli",
+            "error_code": None,
+            "identity_type": "Root",
+            "principal_id": "root",
+            "account_id": "123456789012",
+            "actor_arn": "arn:y",
+            "session_name": "",
+            "weight": 5,
+            "anomaly_score": 8,
+            "is_anomaly": True,
+            "anomaly_reasons": ["Root account"],
+        },
+    ]
+    enriched = [{**all_scored[1], "narrative": "Root did something."}]
+
+    with patch("iam_guardian.api.routes.fetch_iam_events", return_value=[]), patch(
+        "iam_guardian.api.routes.score_all_events",
+        return_value=all_scored,
+    ), patch(
+        "iam_guardian.api.routes.generate_narratives_for_anomalies",
+        return_value=enriched,
+    ):
+        response = await client.get(
+            "/audit/cloudtrail-anomalies?min_score=5",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    data = response.json()
+    assert data["total_anomalies"] == 1
+    assert data["anomalies"][0]["anomaly_score"] == 8

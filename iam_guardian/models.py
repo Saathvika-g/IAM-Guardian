@@ -198,3 +198,75 @@ class ComplianceReport(BaseModel):
     total_findings_analyzed: int
     frameworks: List[FrameworkSection]
     overall_pass_rate: float
+
+
+class CloudTrailEventRecord(BaseModel):
+    event_id: str
+    event_name: str
+    event_time: str
+    region: str
+    source_ip: str
+    user_agent: str
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    identity_type: str
+    principal_id: str
+    account_id: str
+    actor_arn: str
+    session_name: str
+    weight: int
+
+
+class PrincipalActivityRecord(BaseModel):
+    principal_id: str
+    identity_type: str
+    account_id: str
+    actor_arn: str
+    event_count: int
+    high_weight_count: int
+    total_score: int
+    anomaly_flags: List[str]
+    flagged_events: List[CloudTrailEventRecord]
+
+
+class CloudTrailReportResponse(BaseModel):
+    account_id: str
+    period_days: int
+    total_events: int
+    watched_event_counts: dict
+    principals: List[PrincipalActivityRecord]
+    root_activity: List[CloudTrailEventRecord]
+    high_score_principals: List[PrincipalActivityRecord]
+    error_events: List[CloudTrailEventRecord]
+    report_generated_at: str
+
+
+class AnomalousEventRecord(BaseModel):
+    event_id: str
+    event_name: str
+    event_time: str
+    region: str
+    source_ip: str
+    user_agent: str
+    error_code: Optional[str] = None
+    identity_type: str
+    principal_id: str
+    account_id: str
+    actor_arn: str
+    session_name: str
+    weight: int
+    anomaly_score: int
+    anomaly_reasons: List[str]
+    is_anomaly: bool
+    narrative: Optional[str] = None
+
+
+class CloudTrailAnomalyReport(BaseModel):
+    account_id: str
+    period_days: int
+    total_events_analyzed: int
+    total_anomalies: int
+    anomaly_threshold: int
+    anomalies: List[AnomalousEventRecord]
+    score_breakdown: dict
+    report_generated_at: str
