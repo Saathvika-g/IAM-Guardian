@@ -286,7 +286,37 @@ class ChatSessionSummary(BaseModel):
     total_turns: int
     last_message_at: str
     preview: str
-    narrative: Optional[str] = None
+
+
+class EndpointStat(BaseModel):
+    endpoint: str
+    count: int
+    avg_latency: float
+
+
+class MetricsResponse(BaseModel):
+    generated_at: str
+    total_scans: int
+    latest_scan_at: Optional[str] = None
+    total_findings: int
+    open_findings: int
+    resolved_findings: int
+    open_findings_by_severity: dict
+    all_findings_by_severity: dict
+    total_escalation_paths: int
+    critical_escalation_paths: int
+    total_requests: int
+    requests_last_24h: int
+    avg_latency_ms: float
+    p95_latency_ms: float
+    error_count: int
+    error_rate: float
+    top_endpoints: List[dict]
+    total_chat_turns: int
+    unique_chat_sessions: int
+    total_rewrites: int
+    verified_rewrites: int
+    needs_review_rewrites: int
 
 
 class CloudTrailAnomalyReport(BaseModel):

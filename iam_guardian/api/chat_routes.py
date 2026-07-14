@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from iam_guardian.agent.chat_agent import run_chat_agent, save_message
 from iam_guardian.auth import get_current_user
+from iam_guardian.core.rate_limiter import limiter
 from iam_guardian.database import get_db
 from iam_guardian.db_models import ChatSessionORM
 from iam_guardian.models import (
@@ -30,7 +31,9 @@ async def _count_session_messages(
 
 
 @chat_router.post("", response_model=ChatResponse)
+@limiter.limit("20/hour")
 async def chat(
+    request: Request,
     body: ChatMessage,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
@@ -40,6 +43,7 @@ async def chat(
     Supports multi-turn conversation via session_id.
     """
     username = current_user["username"]
+    request.state.username = username
 
     if not body.message.strip():
         raise HTTPException(status_code=422, detail="Message cannot be empty.")

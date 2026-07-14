@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from iam_guardian.cloudtrail.anomaly_narrator import generate_narratives_for_ano
 from iam_guardian.cloudtrail.anomaly_scorer import ANOMALY_THRESHOLD, score_all_events
 from iam_guardian.cloudtrail.cloudtrail import fetch_iam_events
 from iam_guardian.compliance.report_builder import build_compliance_report
+from iam_guardian.core.rate_limiter import limiter
 from iam_guardian.database import get_db
 from iam_guardian.db_models import (
     EscalationPathORM,
@@ -69,15 +70,18 @@ def health() -> dict:
 
 
 @router.post("/audit/run", response_model=AuditResponse)
+@limiter.limit("5/hour")
 async def run_audit(
-    request: AuditRequest,
+    request: Request,
+    body: AuditRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> AuditResponse:
+    request.state.username = current_user["username"]
     scan_id = str(uuid4())
     mock_policies = [
         {
-            "resource_arn": f"arn:aws:iam::{request.account_id}:role/AdminRole",
+            "resource_arn": f"arn:aws:iam::{body.account_id}:role/AdminRole",
             "policy_doc": {
                 "Version": "2012-10-17",
                 "Statement": [
@@ -88,7 +92,7 @@ async def run_audit(
         },
         {
             "resource_arn": (
-                f"arn:aws:iam::{request.account_id}:role/CrossAccountRole"
+                f"arn:aws:iam::{body.account_id}:role/CrossAccountRole"
             ),
             "policy_doc": {
                 "Version": "2012-10-17",
@@ -103,7 +107,7 @@ async def run_audit(
             "type": "trust",
         },
         {
-            "resource_arn": f"arn:aws:iam::{request.account_id}:role/DevRole",
+            "resource_arn": f"arn:aws:iam::{body.account_id}:role/DevRole",
             "policy_doc": {
                 "Version": "2012-10-17",
                 "Statement": [
@@ -139,7 +143,7 @@ async def run_audit(
             findings += check_cross_account_trust(
                 policy["policy_doc"],
                 policy["resource_arn"],
-                request.account_id,
+                body.account_id,
             )
 
     loop = asyncio.get_event_loop()
@@ -168,7 +172,7 @@ async def run_audit(
     db.add(
         ScanORM(
             id=scan_id,
-            account_id=request.account_id,
+            account_id=body.account_id,
             status="completed",
             total_findings=len(findings),
             critical_count=severity_counts["critical"],
@@ -182,7 +186,7 @@ async def run_audit(
 
     return AuditResponse(
         audit_id=scan_id,
-        account_id=request.account_id,
+        account_id=body.account_id,
         status="completed",
         findings=findings,
         total_findings=len(findings),

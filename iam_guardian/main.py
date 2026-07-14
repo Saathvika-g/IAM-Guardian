@@ -3,20 +3,36 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+from iam_guardian.core.logging_config import configure_logging
+
+configure_logging()
 
 from iam_guardian.api.auth_routes import auth_router
 from iam_guardian.api.chat_routes import chat_router
+from iam_guardian.api.metrics_routes import metrics_router
 from iam_guardian.api.routes import router
+from iam_guardian.core.middleware import RequestLoggingMiddleware
+from iam_guardian.core.rate_limiter import limiter
+from iam_guardian.database import AsyncSessionLocal
 
-app = FastAPI(title="IAM Guardian", version="0.1.0")
-app.include_router(auth_router)
+app = FastAPI(
+    title="IAM Guardian AI",
+    version="0.1.0",
+    description="AI-powered AWS IAM security auditing",
+)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+app.add_middleware(
+    RequestLoggingMiddleware,
+    db_factory=AsyncSessionLocal,
+)
+
 app.include_router(router)
+app.include_router(auth_router)
 app.include_router(chat_router)
-
-# Run with:  uvicorn iam_guardian.main:app --reload --port 8000
-#
-# Test:
-# curl http://localhost:8000/health
-# curl -X POST http://localhost:8000/audit/run \
-# -H "Content-Type: application/json" \
-# -d '{"account_id": "123456789012", "region": "us-east-1"}'
+app.include_router(metrics_router)

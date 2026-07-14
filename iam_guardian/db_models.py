@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID as PythonUUID
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, String, Text, Uuid
+from sqlalchemy import JSON, DateTime, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from iam_guardian.database import Base
@@ -105,4 +105,27 @@ class ChatSessionORM(Base):
     username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(10), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RequestLogORM(Base):
+    __tablename__ = "request_logs"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    username: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+    endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    llm_tokens_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
