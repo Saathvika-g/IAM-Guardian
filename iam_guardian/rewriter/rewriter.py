@@ -8,7 +8,7 @@ from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 from iam_guardian.models import IAMPolicyModel
 
-client = Groq(api_key=get_groq_key())
+client = None
 MODEL = "llama-3.3-70b-versatile"
 
 
@@ -43,10 +43,17 @@ def _build_rewrite_prompt(policy_doc: dict, strict: bool = False) -> str:
     )
 
 
+def _get_client():
+    global client
+    if client is None:
+        client = Groq(api_key=get_groq_key())
+    return client
+
+
 @with_groq_retry
 def _call_groq_json_inner(prompt: str) -> dict:
     """Retried inner call that returns a parsed dict."""
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=800,
         response_format={"type": "json_object"},
@@ -86,7 +93,7 @@ def _build_diff_prompt(original: dict, rewritten: dict) -> str:
 @with_groq_retry
 def _call_groq_diff_inner(prompt: str) -> str:
     """Retried inner call for diff summary."""
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=200,
         messages=[

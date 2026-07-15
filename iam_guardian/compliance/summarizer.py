@@ -5,7 +5,7 @@ from groq import Groq
 from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
-client = Groq(api_key=get_groq_key())
+client = None
 MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = (
@@ -15,6 +15,13 @@ SYSTEM_PROMPT = (
     "First sentence: state the compliance posture. "
     "Second sentence: state the most urgent action required."
 )
+
+
+def _get_client():
+    global client
+    if client is None:
+        client = Groq(api_key=get_groq_key())
+    return client
 
 
 def _build_summary_prompt(
@@ -40,7 +47,7 @@ def _build_summary_prompt(
 
 @with_groq_retry
 def _call_groq_summary(prompt: str) -> str:
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=150,
         messages=[

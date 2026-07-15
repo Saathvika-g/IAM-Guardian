@@ -3,7 +3,7 @@ from groq import Groq
 from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
-client = Groq(api_key=get_groq_key())
+client = None
 
 MODEL = "llama-3.3-70b-versatile"
 MAX_TOKENS = 400
@@ -15,10 +15,17 @@ SYSTEM_PROMPT = (
 )
 
 
+def _get_client():
+    global client
+    if client is None:
+        client = Groq(api_key=get_groq_key())
+    return client
+
+
 @with_groq_retry
 def _call_groq_explain(user_prompt: str) -> str:
     """Inner function retried on rate limit and transient Groq errors."""
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         messages=[

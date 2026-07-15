@@ -5,7 +5,7 @@ from groq import Groq
 from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
-client = Groq(api_key=get_groq_key())
+client = None
 MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = (
@@ -13,6 +13,13 @@ SYSTEM_PROMPT = (
     "blue team. Be specific, technical, and actionable. Use numbered steps. "
     "No markdown headers. Plain prose with numbered steps only."
 )
+
+
+def _get_client():
+    global client
+    if client is None:
+        client = Groq(api_key=get_groq_key())
+    return client
 
 
 def _build_narrative_prompt(path: dict) -> str:
@@ -30,7 +37,7 @@ def _build_narrative_prompt(path: dict) -> str:
 
 @with_groq_retry
 def _call_groq_narrative(prompt: str) -> str:
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=600,
         messages=[

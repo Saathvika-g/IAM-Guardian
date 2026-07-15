@@ -5,7 +5,7 @@ from groq import Groq
 from iam_guardian.core.retry import with_groq_retry
 from iam_guardian.core.secrets import get_groq_key
 
-client = Groq(api_key=get_groq_key())
+client = None
 MODEL = "llama-3.3-70b-versatile"
 
 SYSTEM_PROMPT = (
@@ -16,6 +16,13 @@ SYSTEM_PROMPT = (
     "Second sentence: what the security team should check immediately. "
     "Third sentence: what long-term hardening is recommended."
 )
+
+
+def _get_client():
+    global client
+    if client is None:
+        client = Groq(api_key=get_groq_key())
+    return client
 
 
 def _build_narrative_prompt(event: dict) -> str:
@@ -39,7 +46,7 @@ def _build_narrative_prompt(event: dict) -> str:
 
 @with_groq_retry
 def _call_groq_anomaly_narrative(prompt: str) -> str:
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=250,
         messages=[
