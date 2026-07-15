@@ -44,7 +44,7 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f "http://localhost:${PORT:-8000}/health" || exit 1
 
 # --host 0.0.0.0 is required so the port is reachable outside the container.
 CMD ["sh", "-c", "uvicorn iam_guardian.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
