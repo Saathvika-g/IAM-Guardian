@@ -1,0 +1,9 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "python scripts/wait_for_db.py && python -m iam_guardian.init_db && uvicorn iam_guardian.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
