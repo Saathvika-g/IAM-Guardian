@@ -1,0 +1,26 @@
+# render.yaml
+# Render reads this file to configure services.
+# Docs: https://render.com/docs/infrastructure-as-code
+
+services:
+  - type: web
+    name: iam-guardian
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      # Set secrets in the Render dashboard. Never commit real values here.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: USE_SECRETS_MANAGER
+        value: "false"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
