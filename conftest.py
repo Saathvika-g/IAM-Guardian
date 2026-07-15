@@ -9,6 +9,7 @@ os.environ.setdefault("GROQ_API_KEY", "test-groq-key")
 
 from iam_guardian.database import Base, get_db
 from iam_guardian.main import app
+from iam_guardian.core.rate_limiter import limiter
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -33,11 +34,13 @@ async def client(db_session):
     async def override_get_db():
         yield db_session
 
+    limiter.reset()
     app.dependency_overrides[get_db] = override_get_db
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+    limiter.reset()
 
 
 @pytest.fixture

@@ -1,0 +1,72 @@
+# docker-compose.yml
+# Usage:
+#   docker compose up --build          # first run or after code changes
+#   docker compose up -d               # detached background run
+#   docker compose down                # stop and remove containers
+#   docker compose down -v             # stop and remove containers + volumes
+#   docker compose logs -f app         # follow app logs
+#   docker compose exec app bash       # shell into running app container
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: iam_guardian_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-pass}
+      POSTGRES_DB: iam_guardian
+    volumes:
+      # Named volume: data persists across `docker compose down`.
+      # Use `docker compose down -v` to wipe data.
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iam_guardian"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: iam_guardian_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Inside Docker, use the Compose service name "db" as the hostname.
+      DATABASE_URL: postgresql+asyncpg://postgres:${DB_PASSWORD:-pass}@db:5432/iam_guardian
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-prod}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      USE_SECRETS_MANAGER: ${USE_SECRETS_MANAGER:-false}
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    command: >
+      sh -c "
+        echo 'Waiting for database...' &&
+        python scripts/wait_for_db.py &&
+        echo 'Running init_db...' &&
+        python -m iam_guardian.init_db &&
+        echo 'Starting server...' &&
+        uvicorn iam_guardian.main:app --host 0.0.0.0 --port 8000 --workers 1
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_data:
+    driver: local
