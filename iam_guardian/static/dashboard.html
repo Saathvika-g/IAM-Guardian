@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IAM Guardian Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --panel-2: #111827;
+      --border: #2a3648;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --soft: #cbd5e1;
+      --accent: #22d3ee;
+      --accent-2: #0891b2;
+      --critical: #dc2626;
+      --high: #ea580c;
+      --medium: #d97706;
+      --low: #6b7280;
+      --good: #16a34a;
+      --warn: #d97706;
+      --bad: #dc2626;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(34, 211, 238, 0.10), transparent 30rem),
+        linear-gradient(180deg, #0f1419 0%, #0b1017 100%);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+    }
+
+    button, input { font: inherit; }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+
+    .login-wrap {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .login-card {
+      width: min(440px, 100%);
+      background: rgba(26, 35, 50, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+    }
+
+    .brand-kicker {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.05;
+      margin-bottom: 10px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 15px;
+      margin-bottom: 10px;
+      color: var(--soft);
+    }
+
+    .muted {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .form-row {
+      display: grid;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    label {
+      color: var(--soft);
+      font-size: 13px;
+    }
+
+    input {
+      width: 100%;
+      color: var(--text);
+      background: #0b1220;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 13px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12);
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 6px;
+      padding: 11px 15px;
+      background: var(--accent);
+      color: #051016;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .btn:hover { background: #67e8f9; }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { cursor: wait; opacity: 0.65; }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid rgba(34, 211, 238, 0.45);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(34, 211, 238, 0.08);
+      color: #67e8f9;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      max-width: 760px;
+      line-height: 1.5;
+      margin-bottom: 0;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .metrics {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .layout {
+      grid-template-columns: 1.1fr 0.9fr;
+      align-items: start;
+    }
+
+    .card {
+      background: rgba(26, 35, 50, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .metric-card {
+      min-height: 118px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .metric-value {
+      font-family: var(--mono);
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .section-stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 88px 1fr 44px;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0;
+    }
+
+    .bar-label, .bar-count, .mono {
+      font-family: var(--mono);
+    }
+
+    .bar-label {
+      color: var(--soft);
+      font-size: 12px;
+    }
+
+    .track {
+      height: 12px;
+      border-radius: 999px;
+      background: #0b1220;
+      border: 1px solid #263142;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      min-width: 3px;
+      border-radius: inherit;
+      transition: width 260ms ease;
+    }
+
+    .bar-count {
+      text-align: right;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .framework {
+      display: grid;
+      grid-template-columns: 92px 1fr 54px;
+      gap: 12px;
+      align-items: center;
+      margin: 14px 0;
+    }
+
+    .framework-name {
+      font-weight: 700;
+      color: var(--soft);
+    }
+
+    .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .pill, .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .pill {
+      gap: 6px;
+      padding: 8px 10px;
+      color: var(--soft);
+      background: #0b1220;
+      border: 1px solid var(--border);
+    }
+
+    .pill strong { color: var(--text); }
+
+    .badge {
+      padding: 6px 8px;
+      color: white;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .list-item {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(15, 20, 25, 0.65);
+    }
+
+    .list-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+      color: var(--soft);
+      font-weight: 700;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    td.resource, td.explanation {
+      color: var(--muted);
+      max-width: 300px;
+    }
+
+    td.resource {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .state {
+      color: var(--muted);
+      line-height: 1.5;
+      padding: 10px 0;
+    }
+
+    .error {
+      color: #fecaca;
+      background: rgba(220, 38, 38, 0.12);
+      border: 1px solid rgba(220, 38, 38, 0.35);
+      border-radius: 6px;
+      padding: 12px;
+      line-height: 1.45;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 920px) {
+      .metrics, .layout { grid-template-columns: 1fr 1fr; }
+      .layout { display: grid; }
+    }
+
+    @media (max-width: 680px) {
+      .shell { width: min(100% - 24px, 1180px); padding-top: 22px; }
+      .topbar { flex-direction: column; }
+      .metrics, .layout { grid-template-columns: 1fr; }
+      .bar-row { grid-template-columns: 78px 1fr 34px; }
+      .framework { grid-template-columns: 72px 1fr 48px; }
+      .btn { width: 100%; }
+      h1 { font-size: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="loginView" class="login-wrap">
+    <section class="login-card" aria-labelledby="loginTitle">
+      <div class="brand-kicker">iam_guardian</div>
+      <h1 id="loginTitle">IAM Guardian</h1>
+      <p class="muted">Security findings, compliance posture, and AWS activity signals in one console.</p>
+      <form id="loginForm">
+        <div class="form-row">
+          <label for="username">Username</label>
+          <input id="username" name="username" autocomplete="username" required>
+        </div>
+        <div class="form-row">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="form-row">
+          <button id="loginButton" class="btn" type="submit">Sign in</button>
+        </div>
+      </form>
+      <div id="loginError" class="error hidden"></div>
+    </section>
+  </main>
+
+  <main id="dashboardView" class="shell hidden">
+    <header class="topbar">
+      <div>
+        <div class="brand-kicker">security operations console</div>
+        <h1>IAM Guardian</h1>
+        <p class="subtitle">AWS IAM audit results, compliance status, escalation paths, and CloudTrail anomaly signals.</p>
+      </div>
+      <button id="runScanButton" class="btn" type="button">Run new scan</button>
+    </header>
+
+    <section class="grid metrics" aria-label="Metric cards">
+      <article class="card metric-card">
+        <div class="metric-label">Total findings</div>
+        <div id="metricTotalFindings" class="metric-value">—</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Open findings</div>
+        <div id="metricOpenFindings" class="metric-value">—</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Total scans</div>
+        <div id="metricTotalScans" class="metric-value">—</div>
+      </article>
+      <article class="card metric-card">
+        <div class="metric-label">Critical escalation paths</div>
+        <div id="metricEscalations" class="metric-value">—</div>
+      </article>
+    </section>
+
+    <section class="grid layout">
+      <div class="section-stack">
+        <article class="card">
+          <h2>Severity breakdown</h2>
+          <div id="severityChart" class="state">Loading severity data…</div>
+        </article>
+
+        <article class="card">
+          <h2>Top open findings</h2>
+          <div id="findingsTable" class="state">Loading findings…</div>
+        </article>
+      </div>
+
+      <div class="section-stack">
+        <article class="card">
+          <h2>Compliance score</h2>
+          <div id="compliancePanel" class="state">Loading compliance report…</div>
+        </article>
+
+        <article class="card">
+          <h2>Escalation paths</h2>
+          <div id="escalationPanel" class="state">Loading escalation paths…</div>
+        </article>
+
+        <article class="card">
+          <h2>Recent anomalies</h2>
+          <div id="anomaliesPanel" class="state">Loading CloudTrail anomalies…</div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let authToken = "";
+
+    const severityOrder = ["critical", "high", "medium", "low"];
+    const severityColors = {
+      critical: "#dc2626",
+      high: "#ea580c",
+      medium: "#d97706",
+      low: "#6b7280",
+      informational: "#64748b"
+    };
+
+    const loginView = document.getElementById("loginView");
+    const dashboardView = document.getElementById("dashboardView");
+    const loginForm = document.getElementById("loginForm");
+    const loginButton = document.getElementById("loginButton");
+    const loginError = document.getElementById("loginError");
+    const runScanButton = document.getElementById("runScanButton");
+
+    loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      loginError.classList.add("hidden");
+      loginButton.disabled = true;
+      loginButton.textContent = "Signing in…";
+
+      const form = new FormData(loginForm);
+      const body = new URLSearchParams();
+      body.set("username", form.get("username") || "admin");
+      body.set("password", form.get("password") || "guardian123");
+
+      try {
+        const response = await fetch("/auth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body
+        });
+        if (!response.ok) throw new Error("Sign in failed");
+        const data = await response.json();
+        authToken = data.access_token;
+        loginView.classList.add("hidden");
+        dashboardView.classList.remove("hidden");
+        await loadDashboard();
+      } catch (error) {
+        loginError.textContent = "Couldn't sign in — check the credentials or wait for the API to wake up.";
+        loginError.classList.remove("hidden");
+      } finally {
+        loginButton.disabled = false;
+        loginButton.textContent = "Sign in";
+      }
+    });
+
+    runScanButton.addEventListener("click", async () => {
+      runScanButton.disabled = true;
+      runScanButton.textContent = "Running scan…";
+      try {
+        await apiFetch("/audit/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: "123456789012" })
+        });
+        await loadDashboard();
+      } catch (error) {
+        showError("findingsTable", "Couldn't run a new scan — is the API awake?");
+      } finally {
+        runScanButton.disabled = false;
+        runScanButton.textContent = "Run new scan";
+      }
+    });
+
+    async function apiFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("Authorization", `Bearer ${authToken}`);
+      const response = await fetch(url, { ...options, headers });
+      if (response.status === 401) {
+        authToken = "";
+        dashboardView.classList.add("hidden");
+        loginView.classList.remove("hidden");
+        throw new Error("Unauthorized");
+      }
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return response.json();
+    }
+
+    async function loadDashboard() {
+      await Promise.allSettled([
+        loadMetrics(),
+        loadCompliance(),
+        loadEscalations(),
+        loadAnomalies(),
+        loadFindings()
+      ]);
+    }
+
+    async function loadMetrics() {
+      try {
+        const metrics = await apiFetch("/metrics");
+        setText("metricTotalFindings", formatNumber(metrics.total_findings));
+        setText("metricOpenFindings", formatNumber(metrics.open_findings));
+        setText("metricTotalScans", formatNumber(metrics.total_scans));
+        setText("metricEscalations", formatNumber(metrics.critical_escalation_paths));
+        renderSeverityChart(metrics.open_findings_by_severity || {});
+      } catch (error) {
+        ["metricTotalFindings", "metricOpenFindings", "metricTotalScans", "metricEscalations"].forEach((id) => setText(id, "—"));
+        showError("severityChart", "Couldn't load metrics — is the API awake?");
+      }
+    }
+
+    async function loadCompliance() {
+      try {
+        const report = await apiFetch("/audit/compliance-report");
+        renderCompliance(report.frameworks || []);
+      } catch (error) {
+        showError("compliancePanel", "Couldn't load compliance report — is the API awake?");
+      }
+    }
+
+    async function loadEscalations() {
+      try {
+        const data = await apiFetch("/audit/escalation-paths?account_id=123456789012");
+        const panel = document.getElementById("escalationPanel");
+        if (!data.total_paths) {
+          panel.innerHTML = `<div class="state">No escalation paths detected (requires AWS credentials).</div>`;
+          return;
+        }
+        panel.innerHTML = `
+          <div class="pills">
+            ${pill("Total", data.total_paths)}
+            ${pill("Critical", data.critical_count)}
+            ${pill("High", data.high_count)}
+          </div>
+        `;
+      } catch (error) {
+        showError("escalationPanel", "Couldn't load escalation paths — AWS credentials may be unavailable.");
+      }
+    }
+
+    async function loadAnomalies() {
+      try {
+        const data = await apiFetch("/audit/cloudtrail-anomalies?min_score=5");
+        const panel = document.getElementById("anomaliesPanel");
+        if (!data.total_anomalies) {
+          panel.innerHTML = `<div class="state">No CloudTrail anomalies (requires AWS credentials).</div>`;
+          return;
+        }
+        const items = (data.anomalies || []).slice(0, 3).map((event) => `
+          <div class="list-item">
+            <div class="list-title">
+              <span>${escapeHtml(event.event_name || "Unknown event")}</span>
+              <span class="mono">${formatNumber(event.anomaly_score)}</span>
+            </div>
+            <div class="muted mono">${escapeHtml(event.principal_id || "unknown principal")}</div>
+          </div>
+        `).join("");
+        panel.innerHTML = `
+          <div class="pills">${pill("Total anomalies", data.total_anomalies)}</div>
+          <div class="list" style="margin-top: 12px;">${items}</div>
+        `;
+      } catch (error) {
+        showError("anomaliesPanel", "Couldn't load CloudTrail anomalies — AWS credentials may be unavailable.");
+      }
+    }
+
+    async function loadFindings() {
+      try {
+        const findings = await apiFetch("/audit/findings?limit=50");
+        const open = findings
+          .filter((finding) => finding.status === "open")
+          .sort((a, b) => severityRank(a.severity) - severityRank(b.severity))
+          .slice(0, 5);
+        renderFindings(open);
+      } catch (error) {
+        showError("findingsTable", "Couldn't load findings — is the API awake?");
+      }
+    }
+
+    function renderSeverityChart(counts) {
+      const max = Math.max(1, ...severityOrder.map((severity) => Number(counts[severity] || 0)));
+      const rows = severityOrder.map((severity) => {
+        const count = Number(counts[severity] || 0);
+        const width = count ? Math.max(4, (count / max) * 100) : 0;
+        return `
+          <div class="bar-row">
+            <div class="bar-label">${severity}</div>
+            <div class="track">
+              <div class="fill" style="width: ${width}%; background: ${severityColors[severity]};"></div>
+            </div>
+            <div class="bar-count">${count}</div>
+          </div>
+        `;
+      }).join("");
+      document.getElementById("severityChart").innerHTML = rows;
+    }
+
+    function renderCompliance(frameworks) {
+      const panel = document.getElementById("compliancePanel");
+      if (!frameworks.length) {
+        panel.innerHTML = `<div class="state">No compliance data yet. Run a scan to populate the report.</div>`;
+        return;
+      }
+      panel.innerHTML = frameworks.map((framework) => {
+        const rate = Number(framework.pass_rate || 0);
+        const pct = Math.round(rate * 100);
+        const color = rate >= 0.8 ? "var(--good)" : rate >= 0.5 ? "var(--warn)" : "var(--bad)";
+        return `
+          <div class="framework">
+            <div class="framework-name">${escapeHtml(framework.framework)}</div>
+            <div class="track">
+              <div class="fill" style="width: ${pct}%; background: ${color};"></div>
+            </div>
+            <div class="bar-count">${pct}%</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderFindings(findings) {
+      const panel = document.getElementById("findingsTable");
+      if (!findings.length) {
+        panel.innerHTML = `<div class="state">No open findings yet. Run a new scan to generate audit data.</div>`;
+        return;
+      }
+      const rows = findings.map((finding) => `
+        <tr>
+          <td>${badge(finding.severity)}</td>
+          <td>${escapeHtml(finding.check_name || "")}</td>
+          <td class="resource">${escapeHtml(truncate(finding.resource_arn || "", 58))}</td>
+          <td class="explanation">${escapeHtml(truncate(finding.llm_explanation || "", 150))}</td>
+        </tr>
+      `).join("");
+      panel.innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Finding</th>
+                <th>Resource</th>
+                <th>Explanation</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function showError(id, message) {
+      document.getElementById(id).innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+    }
+
+    function pill(label, value) {
+      return `<span class="pill">${escapeHtml(label)} <strong>${formatNumber(value)}</strong></span>`;
+    }
+
+    function badge(severity) {
+      const clean = String(severity || "unknown").toLowerCase();
+      const color = severityColors[clean] || "#64748b";
+      return `<span class="badge" style="background: ${color};">${escapeHtml(clean)}</span>`;
+    }
+
+    function severityRank(severity) {
+      const ranks = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+      return ranks[String(severity || "").toLowerCase()] ?? 9;
+    }
+
+    function truncate(value, max) {
+      const text = String(value || "");
+      return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat().format(Number(value || 0));
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>

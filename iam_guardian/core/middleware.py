@@ -10,7 +10,7 @@ from iam_guardian.core.logging_config import get_logger
 
 logger = get_logger("middleware")
 
-SKIP_LOGGING = {"/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
+SKIP_LOGGING = {"/", "/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):

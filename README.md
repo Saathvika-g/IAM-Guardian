@@ -1,6 +1,21 @@
 # IAM Guardian AI
 ![CI](https://github.com/YOUR_USERNAME/iam-guardian-ai/actions/workflows/ci.yml/badge.svg)
 
+## Live Demo
+
+**Live API:** https://iam-guardian.onrender.com
+**Interactive docs (Swagger UI):** https://iam-guardian.onrender.com/docs
+
+> Hosted on Render's free tier — the first request after a period of inactivity
+> may take 30–60 seconds to wake up. Subsequent requests are fast.
+
+Try it live:
+1. Open the [interactive docs](https://iam-guardian.onrender.com/docs)
+2. Use `POST /auth/token` with username `admin` and password `guardian123` to get a JWT
+3. Click "Authorize" in the top right, paste the token
+4. Run `POST /audit/run` with `{"account_id": "123456789012"}` to generate findings
+5. Explore `GET /audit/findings`, `GET /audit/compliance-report`, and `POST /chat`
+
 ### AI-powered AWS IAM security auditing — detect, explain, rewrite, simulate, track
 
 IAM Guardian is a production-structured FastAPI service that audits AWS IAM
