@@ -10,6 +10,8 @@ jobs:
   test:
     name: Run test suite
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -24,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run pytest
+      - name: Run pytest with coverage
         env:
           GROQ_API_KEY: "dummy-groq-key-for-ci"
           SECRET_KEY: "ci-secret-key-not-real"
@@ -33,14 +35,32 @@ jobs:
         run: |
           pytest tests/ \
             --ignore=tests/test_docker_health.py \
+            --cov=iam_guardian \
+            --cov-report=xml \
+            --cov-report=term-missing \
             -v \
             --tb=short \
             --timeout=60
+
+      - name: Generate coverage badge
+        if: success()
+        run: |
+          pip install coverage-badge
+          coverage-badge -o coverage.svg -f
+
+      - name: Commit coverage badge
+        if: success() && github.event_name == 'push'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add coverage.svg || true
+          git diff --staged --quiet || git commit -m "chore: update coverage badge [skip ci]"
+          git push || echo "No badge changes to push"
 
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: .coverage
+          path: coverage.xml
           retention-days: 7

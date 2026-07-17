@@ -1,5 +1,6 @@
 # IAM Guardian AI
 ![CI](https://github.com/YOUR_USERNAME/iam-guardian-ai/actions/workflows/ci.yml/badge.svg)
+![Coverage](https://raw.githubusercontent.com/YOUR_USERNAME/iam-guardian-ai/main/coverage.svg)
 
 ## Live Demo
 
@@ -236,6 +237,25 @@ pytest tests/test_compliance.py -v                                    # complian
 
 No test touches real Postgres, real AWS, or the real Groq API.
 LLM calls are patched. AWS calls use moto. DB uses SQLite in-memory.
+
+---
+
+## Test Coverage
+
+The full suite runs on SQLite in-memory with all LLM and AWS calls mocked —
+no Postgres, no API keys, no AWS credentials required.
+
+```bash
+# Run with coverage
+pytest tests/ --cov=iam_guardian --cov-report=html --cov-report=term-missing \
+  --ignore=tests/test_docker_health.py
+
+# Open the HTML report
+open htmlcov/index.html
+```
+
+Coverage config lives in `.coveragerc`. The badge above updates automatically
+on every push to main via GitHub Actions.
 
 ---
 
